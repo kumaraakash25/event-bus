@@ -1,9 +1,6 @@
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
+import java.util.concurrent.*;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -40,9 +37,13 @@ public class EventBus {
 
     // Subscriber S1, needs to follow order in which the events are published
     // While reading only one thread should read what is the content for subscriber + topic pair
-    public void read(String topic, String subscriberId) {
-        // TODO:
-        subscriberMetaData.get(subscriberId).get(topic);
+    public void read(String topic, String subscriberId) throws ExecutionException, InterruptedException {
+        Long offset = subscriberMetaData.get(subscriberId).get(topic);
+        CompletableFuture future= readExecutor.readEvents(topic, subscriberId,
+                ()-> topics.get(topic).stream().filter(event -> event.getId() >= offset));
+        System.out.println(future.get());
+        subscriberMetaData.get(subscriberId).put(topic, 123L);
+        // put the updated offset value
     }
 }
 
@@ -72,18 +73,21 @@ class ReadExecutor {
         }
     }
 
-    public <T> CompletableFuture<T> readEvents(String topic, String subscriberId, Map<String, List<Event>> topics) {
-        // TODO:
-        return null;
+    public <T> CompletableFuture<T> readEvents(String topic, String subscriberId, Supplier<T> task) {
+        return CompletableFuture.supplyAsync(task, executors[(topic+subscriberId).hashCode() % executors.length]);
     }
 }
 
 class Event {
-    private String id;
+    public Long getId() {
+        return id;
+    }
+
+    private Long id;
     private String name;
     private Map<String, Object> fields;
 
-    public Event(String id, String name, Map<String, Object> fields) {
+    public Event(Long id, String name, Map<String, Object> fields) {
         this.id = id;
         this.name = name;
         this.fields = fields;
